@@ -552,8 +552,9 @@ static void arm_cpu_initfn(Object *obj)
 static Property arm_cpu_reset_cbar_property =
             DEFINE_PROP_UINT64("reset-cbar", ARMCPU, reset_cbar, 0);
 
+/* fixme: how to change this property from machine code? */
 static Property arm_cpu_reset_hivecs_property =
-            DEFINE_PROP_BOOL("reset-hivecs", ARMCPU, reset_hivecs, false);
+            DEFINE_PROP_BOOL("reset-hivecs", ARMCPU, reset_hivecs, true);
 
 static Property arm_cpu_rvbar_property =
             DEFINE_PROP_UINT64("rvbar", ARMCPU, rvbar, 0);
@@ -893,6 +894,100 @@ static void arm926_initfn(Object *obj)
     cpu->reset_sctlr = 0x00090078;
 }
 
+/* cache lockdown emulation */
+/* note: the model is very incomplete, just enough to emulate
+ * the cache hacks from Magic Lantern */
+static uint64_t eos_cache_lockdown_read(CPUARMState *env, const ARMCPRegInfo *ri)
+{
+    printf("Lockdown read %x\n", ri->crm);
+    return 0;
+}
+
+static void eos_cache_patch(uint32_t addr, uint32_t value)
+{
+    uint32_t old;
+    cpu_physical_memory_read(addr, &old, sizeof(old));
+    
+    if (value != old)
+    {
+        printf("Cache patch: [%08X] <- %X\n", addr, value);
+        cpu_physical_memory_write(addr, &value, sizeof(value));
+    }
+}
+
+static void eos_cache_lockdown_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t val)
+{
+    static uint32_t index = 0;
+    static uint32_t itag = 0;
+    static uint32_t dtag = 0;
+
+    switch (ri->crm)
+    {
+        case 0:             /* cache debug index register */
+            index = val;
+            break;
+        
+        case 1:             /* icache tag */
+            itag = val;
+            break;
+        
+        case 2:             /* dcache tag */
+            dtag = val;
+            break;
+        
+        case 3:             /* icache value */
+            eos_cache_patch((itag & 0xFFFFFFE0) | (index & 0x1C), val);
+            break;
+        
+        case 4:             /* dcache value */
+            eos_cache_patch((dtag & 0xFFFFFFE0) | (index & 0x1C), val);
+            break;
+    }
+}
+
+/* similar to not_v6_cp_reginfo, but .crn was changed from 7 to 15 */
+/* note: this conflicts with ARM_FEATURE_DUMMY_C15_REGS */
+static const ARMCPRegInfo eos_digic5_cp_reginfo[] = {
+    { .name = "WFI_eos",     .cp = 15, .crn = 15, .crm = 8, .opc1 = 0, .opc2 = 2,
+      .access = PL1_W,  .type = ARM_CP_WFI },
+    { .name = "CacheDbgIdx", .cp = 15, .crn = 15, .crm = 0, .opc1 = 3, .opc2 = 0,
+      .access = PL1_RW, .readfn = eos_cache_lockdown_read, .writefn = eos_cache_lockdown_write },
+    { .name = "IcacheTag",   .cp = 15, .crn = 15, .crm = 1, .opc1 = 3, .opc2 = 0,
+      .access = PL1_RW, .readfn = eos_cache_lockdown_read, .writefn = eos_cache_lockdown_write },
+    { .name = "DcacheTag",   .cp = 15, .crn = 15, .crm = 2, .opc1 = 3, .opc2 = 0,
+      .access = PL1_RW, .readfn = eos_cache_lockdown_read, .writefn = eos_cache_lockdown_write },
+    { .name = "IcacheVal",   .cp = 15, .crn = 15, .crm = 3, .opc1 = 3, .opc2 = 0,
+      .access = PL1_RW, .readfn = eos_cache_lockdown_read, .writefn = eos_cache_lockdown_write },
+    { .name = "DcacheVal",   .cp = 15, .crn = 15, .crm = 4, .opc1 = 3, .opc2 = 0,
+      .access = PL1_RW, .readfn = eos_cache_lockdown_read, .writefn = eos_cache_lockdown_write },
+    REGINFO_SENTINEL
+};
+
+static void arm946eos_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_MPU);
+    set_feature(&cpu->env, ARM_FEATURE_XSCALE); /* for MCR p15, 0,R0,c9,c1,0 */
+    cpu->midr = 0x41059461;
+    cpu->ctr = (7 << 25) | (1 << 24) | (4 << 18) | (4 << 15) \
+             | (2 << 12) | (4 << 6) | (4 << 3) | (2 << 0);
+    cpu->reset_sctlr = 0x00000078;
+    define_arm_cp_regs(cpu, eos_digic5_cp_reginfo);
+}
+
+static void cortex_r5_initfn(Object *obj);
+
+static void arm_digic6_eos_initfn(Object *obj)
+{
+    /* Cortex R4: https://chdk.setepontos.com/index.php?topic=11316.msg124273#msg124273 */
+    cortex_r5_initfn(obj);
+    
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->midr = 0x411FC143;
+    cpu->reset_sctlr = 0x08ED0878;
+}
+
 static void arm946_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
@@ -1097,9 +1192,15 @@ static void arm_v7m_class_init(ObjectClass *oc, void *data)
 
 static const ARMCPRegInfo cortexr5_cp_reginfo[] = {
     /* Dummy the TCM region regs for the moment */
-    { .name = "ATCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 0,
+    { .name = "ATCM",       .cp = 15, .opc1 = 0, .crn = 9,  .crm = 1, .opc2 = 0,
       .access = PL1_RW, .type = ARM_CP_CONST },
-    { .name = "BTCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 1,
+    { .name = "BTCM",       .cp = 15, .opc1 = 0, .crn = 9,  .crm = 1, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST },
+    { .name = "INV_DCACHE", .cp = 15, .opc1 = 0, .crn = 15, .crm = 5, .opc2 = 0,
+      .access = PL1_RW, .type = ARM_CP_CONST },
+    { .name = "BUILDOPTS",  .cp = 15, .opc1 = 0, .crn = 15, .crm = 2, .opc2 = CP_ANY,
+      .access = PL1_RW, .type = ARM_CP_CONST },
+    { .name = "ACTLR2",     .cp = 15, .opc1 = 0, .crn = 15, .crm = 0, .opc2 = 0,
       .access = PL1_RW, .type = ARM_CP_CONST },
     REGINFO_SENTINEL
 };
@@ -1558,6 +1659,8 @@ typedef struct ARMCPUInfo {
 static const ARMCPUInfo arm_cpus[] = {
 #if !defined(CONFIG_USER_ONLY) || !defined(TARGET_AARCH64)
     { .name = "arm926",      .initfn = arm926_initfn },
+    { .name = "arm946eos",   .initfn = arm946eos_initfn },
+    { .name = "arm-digic6-eos",   .initfn = arm_digic6_eos_initfn },
     { .name = "arm946",      .initfn = arm946_initfn },
     { .name = "arm1026",     .initfn = arm1026_initfn },
     /* What QEMU calls "arm1136-r2" is actually the 1136 r0p2, i.e. an

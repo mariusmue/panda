@@ -741,6 +741,156 @@ void HELPER(set_cp_reg)(CPUARMState *env, void *rip, uint32_t value)
     ri->writefn(env, ri, value);
 }
 
+/* adapted from CHDK cpuinfo */
+static char linebuf[128];
+
+static const char *regperm_str(unsigned val) {
+    switch(val) {
+        case 0: return "P:-- U:--";
+        case 1: return "P:RW U:--";
+        case 2: return "P:RW U:R-";
+        case 3: return "P:RW U:RW";
+        case 5: return "P:R- U:--";
+        case 6: return "P:R- U:R-";
+        default:
+            return "P:?? U:??";
+    }
+}
+
+static const char *mpu_rattr(unsigned val) {
+    const char *s="";
+    const char *s2="";
+    const char *t;
+    t = (val&4)?"Shared":"Non-shared";
+    if (val&0x20) {
+        switch (val&3) {
+            case 0: s = "Inner Non-cacheable"; break;
+            case 1: s = "Inner Write-back, write-allocate"; break;
+            case 2: s = "Inner Write-through, no write-allocate"; break;
+            case 3: s = "Inner Write-back, no write-allocate"; break;
+        }
+        switch ((val&0x18)>>3) {
+            case 0: s2 = "Outer Non-cacheable"; break;
+            case 1: s2 = "Outer Write-back, write-allocate"; break;
+            case 2: s2 = "Outer Write-through, no write-allocate"; break;
+            case 3: s2 = "Outer Write-back, no write-allocate"; break;
+        }
+        sprintf(linebuf,"%s; %s; %s",s, s2, t);
+    }
+    else {
+        switch (val&0x1B) {
+            case 0: s = "Strongly ordered, shareable"; t=""; break;
+            case 1: s = "Shareable device"; t="Shareable"; break;
+            case 2: s = "Outer and Inner write-through, no write-allocate"; break;
+            case 3: s = "Outer and Inner write-back, no write-allocate"; break;
+            case 8: s = "Outer and Inner Non-cacheable"; break;
+            case 11: s = "Outer and Inner write-back, write-allocate"; break;
+            case 16: s = "Non-shareable Device"; t=""; break;
+            default: s = "(reserved)"; t="";
+        }
+        sprintf(linebuf,"%s; %s",s, t);
+    }
+    return linebuf;
+}
+
+static void print_cpu_mpidr(CPUARMState *env)
+{
+    if (arm_feature(env, ARM_FEATURE_V7MP)) {
+        ARMCPU *cpu = ARM_CPU(arm_env_get_cpu(env));
+        uint64_t mpidr = cpu->mp_affinity;
+        fprintf(stderr, "[CPU%d] ", (int) mpidr & 0xFF);
+    }
+}
+
+void HELPER(print_set_cp_reg)(CPUARMState *env, void *rip, uint32_t value)
+{
+    const ARMCPRegInfo *ri = rip;
+    char desc[256] = "";
+
+    if (strcmp(ri->name, "DSB") == 0)
+    {
+        return;
+    }
+    
+    /* CACHEMAINT registers come in very large groups;
+     * just display how many calls there were.
+     * fixme: if there are MRC calls, the display order may be wrong
+     */
+    static int cachemaint_count = 0;
+    static uint32_t cachemaint_pc = 0;
+    if (strcmp(ri->name, "CACHEMAINT") == 0)
+    {
+        cachemaint_pc = env->regs[15];
+        cachemaint_count++;
+        return;
+    }
+    else
+    {
+        if (cachemaint_count)
+        {
+            print_cpu_mpidr(env);
+            fprintf(stderr, "%08X: MCR p%d, ...          : CACHEMAINT x%d (omitted)\n", cachemaint_pc, ri->cp, cachemaint_count);
+            cachemaint_count = 0;
+        }
+    }
+
+    if (strncmp(ri->name, "946_PRBS", 8) == 0 &&
+        ri->cp == 15 && ri->crn == 6 && ri->opc1 == 0 && ri->opc2 == 0
+        && (value & 1))
+    {
+        uint64_t base = value & 0xFFFFF000;
+        uint64_t size = 1ull << (((value >> 1) & 0x1F) + 1);
+        uint64_t end = base + size - 1;
+        snprintf(desc, sizeof(desc), "(%08lX - %08lX, 0x%lX)", base, end, size);
+    }
+
+    if (strncmp(ri->name, "XSCALE", 6) == 0 &&
+        ri->cp == 15 && ri->crn == 9 && ri->crm == 1 && ri->opc1 == 0)
+    {
+        uint64_t base = value & 0xFFFFF000;
+        uint64_t size = 1ull << (((value >> 1) & 0x1F) + 9);
+        uint64_t end = base + size - 1;
+        snprintf(desc, sizeof(desc), "(%08lX - %08lX, 0x%lX)", base, end, size);
+    }
+
+    if (strcmp(ri->name, "DRSR") == 0)
+    {
+        uint64_t size = 1ull << (((value >> 1) & 0x1F) + 1);
+        snprintf(desc, sizeof(desc), "(0x%lX)",size);
+    }
+
+    if (strcmp(ri->name, "DRACR") == 0)
+    {
+        uint32_t rattr = value & 0x3F;
+        uint32_t accpm = (value >> 8) & 3;
+        uint32_t xn    = (value >> 12) & 1;
+        snprintf(desc, sizeof(desc),
+            "(%s; %s%s)",
+            regperm_str(accpm),
+            mpu_rattr(rattr),
+            xn ? "; Execute never" : ""
+        );
+    }
+
+    print_cpu_mpidr(env);
+    fprintf(stderr, "%08X: MCR p%d,%d,Rd,cr%d,cr%d,%d: %10s <- 0x%-8X %s\n",
+        env->regs[15], ri->cp,
+        ri->opc1, ri->crn, ri->crm, ri->opc2,
+        ri->name, value, desc
+    );
+}
+void HELPER(print_get_cp_reg)(CPUARMState *env, void *rip, uint32_t value)
+{
+    const ARMCPRegInfo *ri = rip;
+
+    print_cpu_mpidr(env);
+    fprintf(stderr, "%08X: MRC p%d,%d,Rd,cr%d,cr%d,%d: %10s -> 0x%X\n",
+        env->regs[15], ri->cp,
+        ri->opc1, ri->crn, ri->crm, ri->opc2,
+        ri->name, value
+    );
+}
+
 uint32_t HELPER(get_cp_reg)(CPUARMState *env, void *rip)
 {
     const ARMCPRegInfo *ri = rip;

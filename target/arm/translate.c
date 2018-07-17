@@ -43,6 +43,9 @@
 extern bool panda_update_pc;
 #endif
 
+#define LOG_ALL_CP_READS
+#define LOG_ALL_CP_WRITES
+
 #define ENABLE_ARCH_4T    arm_dc_feature(s, ARM_FEATURE_V4T)
 #define ENABLE_ARCH_5     arm_dc_feature(s, ARM_FEATURE_V5)
 /* currently all emulated v5 cores are also v5TE, so don't bother */
@@ -7555,6 +7558,27 @@ static int disas_coproc_insn(DisasContext *s, uint32_t insn)
         /* Handle special cases first */
         switch (ri->type & ~(ARM_CP_FLAG_MASK & ~ARM_CP_SPECIAL)) {
         case ARM_CP_NOP:
+            #if defined(LOG_ALL_CP_READS) || defined(LOG_ALL_CP_WRITES)
+            if (!is64) {
+                /* log all reads to coprocessor registers (32-bit) */
+                TCGv_ptr tmpptr;
+                TCGv_i32 tmp;
+                tmpptr = tcg_const_ptr(ri);
+                if (isread) {
+                    #ifdef LOG_ALL_CP_READS
+                    tmp = load_cpu_offset(ri->fieldoffset);
+                    gen_helper_print_get_cp_reg(cpu_env, tmpptr, tmp);
+                    #endif
+                } else {
+                    #ifdef LOG_ALL_CP_WRITES
+                    tmp = load_reg(s, rt);
+                    gen_helper_print_set_cp_reg(cpu_env, tmpptr, tmp);
+                    #endif
+                }
+                tcg_temp_free_ptr(tmpptr);
+                tcg_temp_free_i32(tmp);
+            }
+            #endif
             return 0;
         case ARM_CP_WFI:
             if (isread) {
@@ -7609,6 +7633,15 @@ static int disas_coproc_insn(DisasContext *s, uint32_t insn)
                 } else {
                     tmp = load_cpu_offset(ri->fieldoffset);
                 }
+
+                #ifdef LOG_ALL_CP_READS
+                /* log all reads to coprocessor registers (32-bit) */
+                TCGv_ptr tmpptr;
+                tmpptr = tcg_const_ptr(ri);
+                gen_helper_print_get_cp_reg(cpu_env, tmpptr, tmp);
+                tcg_temp_free_ptr(tmpptr);
+                #endif
+
                 if (rt == 15) {
                     /* Destination register of r15 for 32 bit loads sets
                      * the condition codes from the high 4 bits of the value
@@ -7620,6 +7653,19 @@ static int disas_coproc_insn(DisasContext *s, uint32_t insn)
                 }
             }
         } else {
+            #ifdef LOG_ALL_CP_WRITES
+            if (!is64) {
+                /* log all writes to coprocessor registers (32-bit) */
+                TCGv_i32 tmp;
+                TCGv_ptr tmpptr;
+                tmp = load_reg(s, rt);
+                tmpptr = tcg_const_ptr(ri);
+                gen_helper_print_set_cp_reg(cpu_env, tmpptr, tmp);
+                tcg_temp_free_ptr(tmpptr);
+                tcg_temp_free_i32(tmp);
+            }
+            #endif
+            
             /* Write */
             if (ri->type & ARM_CP_CONST) {
                 /* If not forbidden by access permissions, treat as WI */

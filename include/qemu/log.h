@@ -48,6 +48,10 @@ static inline bool qemu_log_separate(void)
 #define CPU_LOG_LLVM_IR    (1 << 30)
 #define CPU_LOG_LLVM_ASM   (1 << 31)
 
+#define EOS_LOG_IO         (1 << 17)
+#define EOS_LOG_UART       (1 << 18)
+#define EOS_LOG_CALLS      (1 << 19)
+
 /* Returns true if a bit is set in the current loglevel mask
  */
 static inline bool qemu_loglevel_mask(int mask)

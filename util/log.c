@@ -295,6 +295,12 @@ const QEMULogItem qemu_log_items[] = {
 #endif
     { CPU_LOG_RR, "rr",
         "record/replay program points" },
+    { EOS_LOG_IO, "io",
+      "EOS: log low-level I/O activity" },
+    { EOS_LOG_UART, "uart",
+      "EOS: log low-level UART activity" },
+    { EOS_LOG_CALLS, "calls",
+      "EOS: log function calls and export them to IDA" },
     { 0, NULL, NULL },
 };
 

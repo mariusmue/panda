@@ -6541,11 +6541,21 @@ static void arm_cpu_do_interrupt_aarch32(CPUState *cs)
         env->uncached_cpsr |= CPSR_E;
     }
     env->daif |= mask;
-    /* this is a lie, as the was no c1_sys on V4T/V5, but who cares
-     * and we should just guard the thumb mode on V4 */
-    if (arm_feature(env, ARM_FEATURE_V4T)) {
+
+    if (arm_feature(env, ARM_FEATURE_V6) ||
+        arm_feature(env, ARM_FEATURE_V7) ||
+        arm_feature(env, ARM_FEATURE_V8)) {
+        /* newer processors execute the interrupts in Thumb mode
+         * if the SCTLR TE bit is enabled */
         env->thumb = (A32_BANKED_CURRENT_REG_GET(env, sctlr) & SCTLR_TE) != 0;
+    } else if (arm_feature(env, ARM_FEATURE_V4T)) {
+        /* there was no c1_sys on V4T/V5,
+         * and we should just guard the thumb mode on V4
+         * note: arm946eos uses the SCTLR TE bit for something else,
+         * so we can't assume this bit being always 0 on older platforms */
+        env->thumb = 0;
     }
+
     env->regs[14] = env->regs[15] + offset;
     env->regs[15] = addr;
 }
