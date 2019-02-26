@@ -888,7 +888,7 @@ void rr_fill_queue(void) {
 
     // mz first, some sanity checks.  The queue should be empty when this is
     // called.
-    if (rr_mode != RR_REPLAY) return;
+    if (!rr_in_replay()) return;
     rr_assert(rr_queue_empty());
 
     while (!rr_log_is_empty() && num_entries < RR_QUEUE_MAX_LEN) {
@@ -1483,7 +1483,7 @@ int rr_do_begin_record(const char* file_name_full, CPUState* cpu_state)
     g_free(rr_path_base);
     g_free(rr_name_base);
     // set global to turn on recording
-    rr_mode = RR_RECORD;
+    rr_mode |= RR_RECORD;
     return snapshot_ret;
 #endif
 }
@@ -1518,7 +1518,7 @@ void rr_do_end_record(void)
     g_free(rr_name_base);
 
     // turn off logging
-    rr_mode = RR_OFF;
+    rr_mode &= ~RR_RECORD;
 #endif
 }
 
@@ -1577,7 +1577,7 @@ int rr_do_begin_replay(const char* file_name_full, CPUState* cpu_state)
     // reset record/replay counters and flags
     rr_reset_state(cpu_state);
     // set global to turn on replay
-    rr_mode = RR_REPLAY;
+    rr_mode |= RR_REPLAY;
 
     // set up event queue
     rr_queue_head = rr_queue_tail = NULL;
@@ -1639,7 +1639,7 @@ void rr_do_end_replay(int is_error)
     // close logs
     rr_destroy_log();
     // turn off replay
-    rr_mode = RR_OFF;
+    rr_mode &= ~RR_REPLAY;
 
     rr_replay_complete = true;
     

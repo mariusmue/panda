@@ -41,7 +41,12 @@
 #define GENERATE_ENUM(ENUM) ENUM
 #define GENERATE_STRING(STRING) #STRING
 
-typedef enum { RR_OFF, RR_RECORD, RR_REPLAY } RR_mode;
+typedef enum {
+    RR_OFF = 0x00,
+    RR_RECORD = 0x01,
+    RR_REPLAY = 0x02,
+    RR_BOTH   = 0x03
+} RR_mode;
 
 typedef enum { RR_MEM_IO, RR_MEM_RAM, RR_MEM_UNKNOWN} RR_mem_type;
 
@@ -296,8 +301,8 @@ static inline int rr_prog_point_compare(RR_prog_point current,
     }
 }
 
-static inline bool rr_in_replay(void) { return rr_mode == RR_REPLAY; }
-static inline bool rr_in_record(void) { return rr_mode == RR_RECORD; }
+static inline bool rr_in_replay(void) { return rr_mode & RR_REPLAY; }
+static inline bool rr_in_record(void) { return rr_mode & RR_RECORD; }
 static inline bool rr_off(void) { return rr_mode == RR_OFF; }
 static inline bool rr_on(void) { return !rr_off(); }
 
@@ -363,11 +368,24 @@ static inline void rr_replay_skipped_calls(void)
             rr_replay_skipped_calls();                                         \
             REPLAY_ACTION;                                                     \
         } break;                                                               \
+        case RR_BOTH: {                                                        \
+            if (rr_record_in_progress || rr_record_in_main_loop_wait) {        \
+                REPLAY_ACTION;                                                 \
+            } else {                                                           \
+                rr_record_in_progress = 1;                                     \
+                rr_skipped_callsite_location = LOCATION;                       \
+                RECORD_ACTION;                                                 \
+                rr_record_in_progress = 0;                                     \
+            }                                                                  \
+        } break;                                                               \
         case RR_OFF:                                                           \
         default:                                                               \
             ACTION;                                                            \
         }                                                                      \
     } while (0);
+
+
+
 
 // mz
 // mz  Record/Replay Utilities

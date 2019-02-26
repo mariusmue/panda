@@ -8449,7 +8449,7 @@ void gen_intermediate_code(CPUX86State *env, TranslationBlock *tb)
         max_insns = TCG_MAX_INSNS;
     }
 
-    if (rr_mode == RR_REPLAY) {
+    if (rr_in_replay()) {
         uint64_t until_interrupt = rr_num_instr_before_next_interrupt();
         if (max_insns > until_interrupt) {
             max_insns = until_interrupt;

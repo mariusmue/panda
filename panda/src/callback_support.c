@@ -12,7 +12,7 @@
 
 void panda_callbacks_hd_transfer(CPUState *cpu, Hd_transfer_type type, uint64_t src_addr, uint64_t dest_addr, uint32_t num_bytes)
 {
-    if (rr_mode == RR_REPLAY) {
+    if (rr_in_replay()) {
         panda_cb_list *plist;
         for (plist = panda_cbs[PANDA_CB_REPLAY_HD_TRANSFER];
              plist != NULL;
@@ -23,7 +23,7 @@ void panda_callbacks_hd_transfer(CPUState *cpu, Hd_transfer_type type, uint64_t 
 }
 
 void panda_callbacks_handle_packet(CPUState *cpu, uint8_t *buf, size_t size, uint8_t direction, uint64_t old_buf_addr) {
-    if (rr_mode == RR_REPLAY) {
+    if (rr_in_replay()) {
         panda_cb_list *plist;
         for (plist = panda_cbs[PANDA_CB_REPLAY_HANDLE_PACKET];
              plist != NULL;
@@ -33,7 +33,7 @@ void panda_callbacks_handle_packet(CPUState *cpu, uint8_t *buf, size_t size, uin
     }
 }
 void panda_callbacks_net_transfer(CPUState *cpu, Net_transfer_type type, uint64_t src_addr, uint64_t dst_addr, uint32_t num_bytes) {
-    if (rr_mode == RR_REPLAY) {
+    if (rr_in_replay()) {
         panda_cb_list *plist;
         for (plist = panda_cbs[PANDA_CB_REPLAY_NET_TRANSFER];
              plist != NULL;
@@ -45,7 +45,7 @@ void panda_callbacks_net_transfer(CPUState *cpu, Net_transfer_type type, uint64_
 
 // These are used in exec.c
 void panda_callbacks_before_dma(CPUState *cpu, hwaddr addr1, const uint8_t *buf, hwaddr l, int is_write) {
-    if (rr_mode == RR_REPLAY) {
+    if (rr_in_replay()) {
         panda_cb_list *plist;
         for (plist = panda_cbs[PANDA_CB_REPLAY_BEFORE_DMA];
              plist != NULL; plist = panda_cb_list_next(plist)) {
@@ -55,7 +55,7 @@ void panda_callbacks_before_dma(CPUState *cpu, hwaddr addr1, const uint8_t *buf,
 }
 
 void panda_callbacks_after_dma(CPUState *cpu, hwaddr addr1, const uint8_t *buf, hwaddr l, int is_write) {
-    if (rr_mode == RR_REPLAY) {
+    if (rr_in_replay()) {
         panda_cb_list *plist;
        for (plist = panda_cbs[PANDA_CB_REPLAY_AFTER_DMA];
             plist != NULL; plist = panda_cb_list_next(plist)) {
@@ -295,7 +295,7 @@ void panda_callbacks_asid_changed(CPUState *env, target_ulong old_asid, target_u
 void panda_callbacks_serial_receive(CPUState *cpu, uint64_t fifo_addr,
                                     uint8_t value)
 {
-    if (rr_mode == RR_REPLAY) {
+    if (rr_in_replay()) {
         panda_cb_list *plist;
         for (plist = panda_cbs[PANDA_CB_REPLAY_SERIAL_RECEIVE]; plist != NULL;
              plist = panda_cb_list_next(plist)) {
@@ -307,7 +307,7 @@ void panda_callbacks_serial_receive(CPUState *cpu, uint64_t fifo_addr,
 void panda_callbacks_serial_read(CPUState *cpu, uint64_t fifo_addr,
                                  uint32_t port_addr, uint8_t value)
 {
-    if (rr_mode == RR_REPLAY) {
+    if (rr_in_replay()) {
         panda_cb_list *plist;
         for (plist = panda_cbs[PANDA_CB_REPLAY_SERIAL_READ]; plist != NULL;
              plist = panda_cb_list_next(plist)) {
@@ -319,7 +319,7 @@ void panda_callbacks_serial_read(CPUState *cpu, uint64_t fifo_addr,
 void panda_callbacks_serial_send(CPUState *cpu, uint64_t fifo_addr,
                                  uint8_t value)
 {
-    if (rr_mode == RR_REPLAY) {
+    if (rr_in_replay()) {
         panda_cb_list *plist;
         for (plist = panda_cbs[PANDA_CB_REPLAY_SERIAL_SEND]; plist != NULL;
              plist = panda_cb_list_next(plist)) {
@@ -331,7 +331,7 @@ void panda_callbacks_serial_send(CPUState *cpu, uint64_t fifo_addr,
 void panda_callbacks_serial_write(CPUState *cpu, uint64_t fifo_addr,
                                   uint32_t port_addr, uint8_t value)
 {
-    if (rr_mode == RR_REPLAY) {
+    if (rr_in_replay()) {
         panda_cb_list *plist;
         for (plist = panda_cbs[PANDA_CB_REPLAY_SERIAL_WRITE]; plist != NULL;
              plist = panda_cb_list_next(plist)) {

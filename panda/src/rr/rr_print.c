@@ -12,7 +12,8 @@
 /* GLOBALS */
 /******************************************************************************************/
 //mz record/replay mode
-volatile RR_mode rr_mode = RR_REPLAY;
+//volatile RR_mode rr_mode = RR_REPLAY;
+volatile RR_mode rr_mode;// |= RR_REPLAY;
 
 //mz program execution state
 
