@@ -134,7 +134,6 @@ typedef struct rr_log_entry_t {
 } RR_log_entry;
 
 // a program-point indexed record/replay log
-typedef enum { RECORD, REPLAY } RR_log_type;
 typedef struct RR_log_t {
     // mz TODO this field seems redundant given existence of rr_mode
     RR_log_type type;              // record or replay
@@ -145,6 +144,7 @@ typedef struct RR_log_t {
     unsigned long long
         size; // for a log being opened for read, this will be the size in bytes
     uint64_t bytes_read;
+    struct RR_log_t *next;
 } RR_log;
 
 RR_log_entry* rr_get_queue_head(void);
@@ -172,7 +172,8 @@ static inline void qemu_log_rr(target_ulong pc) {
     }
 }
 
-extern RR_log *rr_nondet_log;
+// mm We only need to export the replay log, not the record logs
+extern RR_log *rr_nondet_replay_log;
 // Defined in rr_log.c.
 extern unsigned rr_next_progress;
 static inline void rr_maybe_progress(void) {
@@ -180,8 +181,9 @@ static inline void rr_maybe_progress(void) {
 
     if (unlikely(rr_get_percentage() >= rr_next_progress)) {
         if (rr_next_progress == 1) {
-            printf("%s:  %10" PRIu64 " instrs total.\n", rr_nondet_log->name,
-                    rr_nondet_log->last_prog_point.guest_instr_count);
+            printf("%s:  %10" PRIu64 " instrs total.\n",
+                    rr_nondet_replay_log->name,
+                    rr_nondet_replay_log->last_prog_point.guest_instr_count);
         }
         replay_progress();
         rr_next_progress++;
