@@ -36,8 +36,8 @@ static char *snp_name;
 static FILE *oldlog = NULL;
 static FILE *newlog = NULL;
 
-static RR_log_type rr_nondet_log_type;
-static unsigned long long rr_nondet_log_size;
+static RR_log_type rr_nondet_replay_log_type;
+static unsigned long long rr_nondet_replay_log_size;
 
 //static RR_log_entry entry;
 static RR_prog_point orig_last_prog_point = {0};
@@ -85,9 +85,9 @@ static INLINEIT RR_log_entry *alloc_new_entry(void)
 }
 
 static INLINEIT bool rr_log_is_empty(void) {
-    if (rr_nondet_log_type == REPLAY){
+    if (rr_nondet_replay_log_type == REPLAY){
         long pos = ftell(oldlog);
-        return pos == rr_nondet_log_size;
+        return pos == rr_nondet_replay_log_size;
     } else {
         return false;
     }
@@ -219,9 +219,9 @@ static RR_prog_point copy_entry(void) {
 }
 
 static void start_snip(uint64_t count) {
-    sassert((oldlog = fopen(rr_nondet_log->name, "r")), 8);
-    rr_nondet_log_type = rr_nondet_log->type;
-    rr_nondet_log_size = rr_nondet_log->size;
+    sassert((oldlog = fopen(rr_nondet_replay_log->name, "r")), 8);
+    rr_nondet_replay_log_type = rr_nondet_replay_log->type;
+    rr_nondet_replay_log_size = rr_nondet_replay_log->size;
     sassert(fread(&orig_last_prog_point, sizeof(RR_prog_point), 1, oldlog) == 1, 9);
     printf("Original ending prog point: %" PRId64 "\n", (uint64_t) orig_last_prog_point.guest_instr_count);
 
@@ -247,7 +247,7 @@ static void start_snip(uint64_t count) {
     fwrite(&prog_point.guest_instr_count,
            sizeof(prog_point.guest_instr_count), 1, newlog);
     
-    fseek(oldlog, ftell(rr_nondet_log->fp), SEEK_SET);
+    fseek(oldlog, ftell(rr_nondet_replay_log->fp), SEEK_SET);
     
     // If there are items in the queue, then start copying the log
     // from there
