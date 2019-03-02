@@ -134,6 +134,7 @@ typedef struct rr_log_entry_t {
 } RR_log_entry;
 
 // a program-point indexed record/replay log
+typedef enum { RECORD, REPLAY } RR_log_type;
 typedef struct RR_log_t {
     // mz TODO this field seems redundant given existence of rr_mode
     RR_log_type type;              // record or replay
@@ -216,5 +217,11 @@ uint32_t rr_checksum_memory(void);
 uint32_t rr_checksum_regs(void);
 
 bool rr_queue_empty(void);
+
+// Log management
+void rr_create_record_log(const char* filename);
+void rr_create_replay_log(const char* filename);
+void rr_destroy_log(RR_log* rr_nondet_log);
+uint8_t rr_replay_finished(void);
 
 #endif

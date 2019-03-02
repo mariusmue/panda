@@ -51,13 +51,6 @@ typedef enum {
 typedef enum { RR_MEM_IO, RR_MEM_RAM, RR_MEM_UNKNOWN} RR_mem_type;
 
 extern volatile RR_mode rr_mode;
-typedef enum { RECORD, REPLAY } RR_log_type;
-
-// Log management
-void rr_create_record_log(const char* filename);
-void rr_create_replay_log(const char* filename);
-void rr_destroy_log(RR_log_type log_type);
-uint8_t rr_replay_finished(void);
 
 // mz Flags set by monitor to indicate requested record/replay action
 extern volatile int rr_replay_requested;

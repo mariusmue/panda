@@ -266,10 +266,112 @@ static inline void rr_assert_fail(const char* exp, const char* file, int line,
 /******************************************************************************************/
 
 
-static inline size_t rr_fwrite(RR_log* rr_nondet_log, void *ptr, size_t size, size_t nmemb) {
+static inline size_t rr_fwrite(RR_log* rr_nondet_log, void *ptr, size_t size, size_t nmemb)
+{
     size_t result = fwrite(ptr, size, nmemb, rr_nondet_log->fp);
     rr_assert(result == nmemb);
     return result;
+}
+
+static inline void rr_write_item_internal(RR_log* rr_nondet_log,
+        RR_log_entry item)
+{
+#define RR_WRITE_ITEM(rr_log, field) rr_fwrite(rr_log, &(field), sizeof(field), 1)
+    rr_assert(rr_nondet_log != NULL);
+    // keep replay format the same.
+    RR_WRITE_ITEM(rr_nondet_log, item.header.prog_point.guest_instr_count);
+    rr_fwrite(rr_nondet_log, &(item.header.kind), 1, 1);
+    rr_fwrite(rr_nondet_log, &(item.header.callsite_loc), 1, 1);
+
+    // mz also save the program point in the log structure to ensure that our
+    // header will include the latest program point.
+    rr_nondet_log->last_prog_point = item.header.prog_point;
+
+
+    switch (item.header.kind) {
+        case RR_INPUT_1:
+            RR_WRITE_ITEM(rr_nondet_log, item.variant.input_1);
+            break;
+        case RR_INPUT_2:
+            RR_WRITE_ITEM(rr_nondet_log, item.variant.input_2);
+            break;
+        case RR_INPUT_4:
+            RR_WRITE_ITEM(rr_nondet_log, item.variant.input_4);
+            break;
+        case RR_INPUT_8:
+            RR_WRITE_ITEM(rr_nondet_log, item.variant.input_8);
+            break;
+        case RR_INTERRUPT_REQUEST:
+            RR_WRITE_ITEM(rr_nondet_log, item.variant.interrupt_request);
+            break;
+        case RR_EXIT_REQUEST:
+            RR_WRITE_ITEM(rr_nondet_log, item.variant.exit_request);
+            break;
+        case RR_PENDING_INTERRUPTS:
+            RR_WRITE_ITEM(rr_nondet_log, item.variant.pending_interrupts);
+            break;
+        case RR_EXCEPTION:
+            RR_WRITE_ITEM(rr_nondet_log, item.variant.exception_index);
+            break;
+        case RR_SKIPPED_CALL: {
+            RR_skipped_call_args* args = &item.variant.call_args;
+            rr_fwrite(rr_nondet_log, &(args->kind), 1, 1);
+            switch (args->kind) {
+                case RR_CALL_CPU_MEM_RW:
+                    RR_WRITE_ITEM(rr_nondet_log, args->variant.cpu_mem_rw_args);
+                    rr_fwrite(rr_nondet_log, args->variant.cpu_mem_rw_args.buf, 1,
+                            args->variant.cpu_mem_rw_args.len);
+                    break;
+                case RR_CALL_CPU_MEM_UNMAP:
+                    RR_WRITE_ITEM(rr_nondet_log, args->variant.cpu_mem_unmap);
+                    rr_fwrite(rr_nondet_log, args->variant.cpu_mem_unmap.buf, 1,
+                                args->variant.cpu_mem_unmap.len);
+                    break;
+                case RR_CALL_CPU_REG_WRITE:
+                    RR_WRITE_ITEM(rr_nondet_log, args->variant.cpu_reg_write_args);
+                    rr_fwrite(rr_nondet_log, args->variant.cpu_reg_write_args.buf, 1,
+                                args->variant.cpu_reg_write_args.len);
+                    break;
+                case RR_CALL_MEM_REGION_CHANGE:
+                    RR_WRITE_ITEM(rr_nondet_log, args->variant.mem_region_change_args);
+                    rr_fwrite(rr_nondet_log, args->variant.mem_region_change_args.name, 1,
+                            args->variant.mem_region_change_args.len);
+                    break;
+                case RR_CALL_HD_TRANSFER:
+                    RR_WRITE_ITEM(rr_nondet_log, args->variant.hd_transfer_args);
+                    break;
+                case RR_CALL_NET_TRANSFER:
+                    RR_WRITE_ITEM(rr_nondet_log, args->variant.net_transfer_args);
+                    break;
+                case RR_CALL_HANDLE_PACKET:
+                    RR_WRITE_ITEM(rr_nondet_log, args->variant.handle_packet_args);
+                    rr_fwrite(rr_nondet_log, args->variant.handle_packet_args.buf,
+                            args->variant.handle_packet_args.size, 1);
+                    break;
+                case RR_CALL_SERIAL_RECEIVE:
+                    RR_WRITE_ITEM(rr_nondet_log, args->variant.serial_receive_args);
+                    break;
+                case RR_CALL_SERIAL_READ:
+                    RR_WRITE_ITEM(rr_nondet_log, args->variant.serial_read_args);
+                    break;
+                case RR_CALL_SERIAL_SEND:
+                    RR_WRITE_ITEM(rr_nondet_log, args->variant.serial_send_args);
+                    break;
+                case RR_CALL_SERIAL_WRITE:
+                    RR_WRITE_ITEM(rr_nondet_log, args->variant.serial_write_args);
+                    break;
+                default:
+                    // mz unimplemented
+                    rr_assert(0 && "Unimplemented skipped call!");
+            }
+        } break;
+        case RR_END_OF_LOG:
+            // mz nothing to read
+            break;
+        default:
+            // mz unimplemented
+            rr_assert(0 && "Unimplemented replay log entry!");
+    }
 }
 
 // mz write the current log item to file
@@ -278,108 +380,16 @@ static inline void rr_write_item(RR_log* rr_nondet_record_log, RR_log_entry item
     // mz save the header
     if (!rr_in_record()) return;
 
-#define RR_WRITE_ITEM(rr_log, field) rr_fwrite(rr_log, &(field), sizeof(field), 1)
-#define FOREACH(item, list_head)                                               \
-    for(RR_log *item = list_head; item != NULL ; item=item->next) \
+#define FOREACH_RR_RECORD(item)                                                \
+    for(RR_log *item = rr_nondet_record_logs ; item != NULL ; item=item->next) \
 
-    RR_log *rr_record_log_head = rr_nondet_record_log == NULL ?
-        rr_nondet_record_logs : rr_nondet_record_log;
-
-    FOREACH(rr_nondet_log, rr_record_log_head) {
-        rr_assert(rr_nondet_log != NULL);
-        // keep replay format the same.
-        RR_WRITE_ITEM(rr_nondet_log, item.header.prog_point.guest_instr_count);
-        rr_fwrite(rr_nondet_log, &(item.header.kind), 1, 1);
-        rr_fwrite(rr_nondet_log, &(item.header.callsite_loc), 1, 1);
-
-        // mz also save the program point in the log structure to ensure that our
-        // header will include the latest program point.
-        rr_nondet_log->last_prog_point = item.header.prog_point;
-
-
-        switch (item.header.kind) {
-            case RR_INPUT_1:
-                RR_WRITE_ITEM(rr_nondet_log, item.variant.input_1);
-                break;
-            case RR_INPUT_2:
-                RR_WRITE_ITEM(rr_nondet_log, item.variant.input_2);
-                break;
-            case RR_INPUT_4:
-                RR_WRITE_ITEM(rr_nondet_log, item.variant.input_4);
-                break;
-            case RR_INPUT_8:
-                RR_WRITE_ITEM(rr_nondet_log, item.variant.input_8);
-                break;
-            case RR_INTERRUPT_REQUEST:
-                RR_WRITE_ITEM(rr_nondet_log, item.variant.interrupt_request);
-                break;
-            case RR_EXIT_REQUEST:
-                RR_WRITE_ITEM(rr_nondet_log, item.variant.exit_request);
-                break;
-            case RR_PENDING_INTERRUPTS:
-                RR_WRITE_ITEM(rr_nondet_log, item.variant.pending_interrupts);
-                break;
-            case RR_EXCEPTION:
-                RR_WRITE_ITEM(rr_nondet_log, item.variant.exception_index);
-                break;
-            case RR_SKIPPED_CALL: {
-                RR_skipped_call_args* args = &item.variant.call_args;
-                rr_fwrite(rr_nondet_log, &(args->kind), 1, 1);
-                switch (args->kind) {
-                    case RR_CALL_CPU_MEM_RW:
-                        RR_WRITE_ITEM(rr_nondet_log, args->variant.cpu_mem_rw_args);
-                        rr_fwrite(rr_nondet_log, args->variant.cpu_mem_rw_args.buf, 1,
-                                args->variant.cpu_mem_rw_args.len);
-                        break;
-                    case RR_CALL_CPU_MEM_UNMAP:
-                        RR_WRITE_ITEM(rr_nondet_log, args->variant.cpu_mem_unmap);
-                        rr_fwrite(rr_nondet_log, args->variant.cpu_mem_unmap.buf, 1,
-                                    args->variant.cpu_mem_unmap.len);
-                        break;
-                    case RR_CALL_CPU_REG_WRITE:
-                        RR_WRITE_ITEM(rr_nondet_log, args->variant.cpu_reg_write_args);
-                        rr_fwrite(rr_nondet_log, args->variant.cpu_reg_write_args.buf, 1,
-                                    args->variant.cpu_reg_write_args.len);
-                        break;
-                    case RR_CALL_MEM_REGION_CHANGE:
-                        RR_WRITE_ITEM(rr_nondet_log, args->variant.mem_region_change_args);
-                        rr_fwrite(rr_nondet_log, args->variant.mem_region_change_args.name, 1,
-                                args->variant.mem_region_change_args.len);
-                        break;
-                    case RR_CALL_HD_TRANSFER:
-                        RR_WRITE_ITEM(rr_nondet_log, args->variant.hd_transfer_args);
-                        break;
-                    case RR_CALL_NET_TRANSFER:
-                        RR_WRITE_ITEM(rr_nondet_log, args->variant.net_transfer_args);
-                        break;
-                    case RR_CALL_HANDLE_PACKET:
-                        RR_WRITE_ITEM(rr_nondet_log, args->variant.handle_packet_args);
-                        rr_fwrite(rr_nondet_log, args->variant.handle_packet_args.buf,
-                                args->variant.handle_packet_args.size, 1);
-                        break;
-                    case RR_CALL_SERIAL_RECEIVE:
-                        RR_WRITE_ITEM(rr_nondet_log, args->variant.serial_receive_args);
-                        break;
-                    case RR_CALL_SERIAL_READ:
-                        RR_WRITE_ITEM(rr_nondet_log, args->variant.serial_read_args);
-                        break;
-                    case RR_CALL_SERIAL_SEND:
-                        RR_WRITE_ITEM(rr_nondet_log, args->variant.serial_send_args);
-                        break;
-                    case RR_CALL_SERIAL_WRITE:
-                        RR_WRITE_ITEM(rr_nondet_log, args->variant.serial_write_args);
-                        break;
-                    default:
-                        // mz unimplemented
-                        rr_assert(0 && "Unimplemented skipped call!");
-                }
-            } break;
-            case RR_END_OF_LOG:
-                // mz nothing to read
-                break;
-            default:
-                // mz unimplemented
-                rr_assert(0 && "Unimplemented replay log entry!");
+    if (unlikely(rr_nondet_record_log != NULL)){
+        // Write item only to specified rr_log
+        rr_write_item_internal(rr_nondet_record_log, item);
+    }
+    else {
+        FOREACH_RR_RECORD(rr_nondet_log) {
+            rr_write_item_internal(rr_nondet_log, item);
         }
     }
 }
@@ -1277,17 +1287,8 @@ void rr_create_replay_log(const char* filename)
 
 // close file and free associated memory
 // When log_type is RECORD, the last opened record will be closed
-void rr_destroy_log(RR_log_type log_type)
+void rr_destroy_log(RR_log* rr_nondet_log)
 {
-    RR_log *rr_nondet_log, *cur;
-    if (log_type == REPLAY) {
-        rr_nondet_log = rr_nondet_replay_log;
-    } else {
-        rr_assert(rr_nondet_record_logs != NULL);
-        cur = rr_nondet_record_logs;
-        while(cur->next != NULL) cur = cur->next;
-        rr_nondet_log = cur;
-    }
     if (rr_nondet_log->fp) {
         // mz if in record, update the header with the last written prog point.
         if (rr_nondet_log->type == RECORD) {
@@ -1525,12 +1526,18 @@ static uint32_t rr_checksum_memory_internal(void);
 void rr_do_end_record(void)
 {
 #ifdef CONFIG_SOFTMMU
+    RR_log *rr_nondet_log, *cur; 
+
+    rr_assert(rr_nondet_record_logs != NULL);
+    cur = rr_nondet_record_logs;
+    while(cur->next != NULL) cur = cur->next;
+    rr_nondet_log = cur;
     // mz put in end-of-log marker
-    rr_record_end_of_log(rr_nondet_record_logs);
+    rr_record_end_of_log(rr_nondet_log);
 
     //FIXME
-    char* rr_path_base = g_strdup(rr_nondet_record_logs->name);
-    char* rr_name_base = g_strdup(rr_nondet_record_logs->name);
+    char* rr_path_base = g_strdup(rr_nondet_log->name);
+    char* rr_name_base = g_strdup(rr_nondet_log->name);
     // char *rr_path = dirname(rr_path_base);
     char* rr_name = basename(rr_name_base);
 
@@ -1546,13 +1553,25 @@ void rr_do_end_record(void)
 
     // log_all_cpu_states();
 
-    rr_destroy_log(RECORD);
+    rr_destroy_log(rr_nondet_log);
+    // unlink the record
+    if (rr_nondet_log == rr_nondet_record_logs) {
+        rr_nondet_record_logs = NULL;
+    }
+    else {
+        cur = rr_nondet_record_logs;
+        while(cur->next->next != NULL) cur = cur->next;
+        cur->next = NULL;
+    }
+
 
     g_free(rr_path_base);
     g_free(rr_name_base);
 
-    // turn off logging
-    rr_mode &= ~RR_RECORD;
+    // turn off logging if this was the last record
+    if (rr_nondet_record_logs == NULL) {
+        rr_mode &= ~RR_RECORD;
+    }
 #endif
 }
 
@@ -1671,7 +1690,7 @@ void rr_do_end_replay(int is_error)
     // mz print CPU state at end of replay
     // log_all_cpu_states();
     // close logs
-    rr_destroy_log(REPLAY);
+    rr_destroy_log(rr_nondet_replay_log);
     // turn off replay
     rr_mode &= ~RR_REPLAY;
 
